@@ -1,5 +1,6 @@
 from ShangMi import *
 import time
+from datetime import datetime
 
 class Block:
     def __init__(self, index: str, 
@@ -32,11 +33,12 @@ class Block:
         return sm3_hash_string(pending_string)
     
     def __str__(self):
+        readable_time = datetime.fromtimestamp(self.timestamp).strftime("%Y-%m-%d %H:%M:%S")
         return (f"index = \t{self.index},\n"
                 f"prev_hash = \t{self.previous_block_hash},\n"
                 f"content = \t{self.transaction_content},\n"
                 f"self_hash = \t{self.self_hash},\n"
-                f"timestamp = \t{self.timestamp}\n")
+                f"timestamp = \t{readable_time}\n")
     
 if __name__ == '__main__':
     print(Block.create_genesis_block())
