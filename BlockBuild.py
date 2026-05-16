@@ -3,6 +3,10 @@ import time
 from datetime import datetime
 from CustomsDeclaration import CustomsDeclaration
 
+def create_genesis_block():
+    """生成创世区块"""
+    return Block('0','0'*64, "This is the genesis block")
+
 
 class Block:
     def __init__(self, index: str, 
@@ -16,13 +20,6 @@ class Block:
         self.transaction_content = transaction_content
         self.timestamp = timestamp
         self.self_hash = self.get_self_hash()
-
-
-    @staticmethod 
-    def create_genesis_block():
-        """生成创世区块"""
-        return Block('0','0'*64, "This is the genesis block")
-    
     
     def get_self_hash(self): 
         """生成当前对象哈希"""
@@ -43,4 +40,4 @@ class Block:
                 f"timestamp = \t{readable_time}\n")
     
 if __name__ == '__main__':
-    print(Block.create_genesis_block())
+    print(create_genesis_block())

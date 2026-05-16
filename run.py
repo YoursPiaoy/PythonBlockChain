@@ -1,4 +1,5 @@
-from ChainBuild import BlockChain, Block
+from ChainBuild import BlockChain, Block, add_block, validate, save
+from BlockBuild import create_genesis_block
 import os
 
 
@@ -9,12 +10,14 @@ class AutoBlockChain(BlockChain):
     """
 
     def __init__(self, blocks=None, db_path="./BlockChainDatabase/chain.json"):
+        if blocks is None:
+            blocks = [create_genesis_block()]
         super().__init__(blocks)
         self.db_path = db_path
 
     def add_block(self, transaction_content: str) -> Block:
-        block = super().add_block(transaction_content)
-        self.save_chain(self.db_path)
+        block = add_block(transaction_content, self.blocks)
+        save(self.blocks, self.db_path)
         print("  >> 已自动保存到数据库")
         return block
 
@@ -23,7 +26,7 @@ class AutoBlockChain(BlockChain):
         if loaded is not None:
             self.blocks = loaded.blocks
             print("  >> 已从数据库重新加载，基于磁盘数据进行校验")
-        return super().validate()
+        return validate(self.blocks)
 
 
 def clear():
@@ -60,7 +63,7 @@ def main():
                     db_path = path_input
                 print(f"\n正在创建新区块链（含创世区块），保存至: {db_path}")
                 chain = AutoBlockChain(db_path=db_path)
-                chain.save_chain(chain.db_path)
+                save(chain.blocks, chain.db_path)
                 break
             elif gen_choice == "n":
                 while True:
@@ -95,8 +98,6 @@ def main():
         print("  1. 查看整条链")
         print("  2. 新增区块（输入交易内容上链）")
         print("  3. 校验完整性（自动从数据库重载后校验）")
-        print("  4. 保存到数据库")
-        print("  5. 从数据库重载")
         print("  0. 退出（自动保存）")
         print("─" * 60)
 
@@ -136,19 +137,8 @@ def main():
                 print("校验失败 —— 数据已被篡改或链不完整")
             pause()
 
-        elif choice == "4":
-            chain.save_chain(chain.db_path)
-            pause()
-
-        elif choice == "5":
-            loaded = BlockChain.load(chain.db_path)
-            if loaded is not None:
-                chain.blocks = loaded.blocks
-                print(f"已重载，当前 {len(chain)} 个区块")
-            pause()
-
         elif choice == "0":
-            chain.save_chain(chain.db_path)
+            save(chain.blocks, chain.db_path)
             print("数据已保存！")
             break
 
