@@ -8,7 +8,7 @@
 | --- | --- |
 | [ShangMi.py](ShangMi.py) | 国密算法封装（SM3 哈希、SM2 密钥生成/加解密/签名验签） |
 | [BlockBuild.py](BlockBuild.py) | 区块数据结构定义（`Block` 类） |
-| [ChainBuild.py](ChainBuild.py) | 区块链核心逻辑：独立函数（`add_block` / `validate` / `save`）+ `BlockChain` 类（创建、加载、索引、遍历） |
+| [ChainBuild.py](ChainBuild.py) | 区块链核心逻辑：独立函数（`add_block` / `validate` / `save`）+ `BlockChain` 类（创建、加载、索引、切片、迭代、成员判断） |
 | [CustomsDeclaration.py](CustomsDeclaration.py) | 报关单数据模型（dataclass），格式化为标准报关单字符串，可直接作为交易内容上链 |
 | [run.py](run.py) | 交互式 CLI 主程序，含 `AutoBlockChain`（自动保存/重载） |
 
@@ -17,6 +17,7 @@
 - **SM3 哈希** — 区块指纹生成，确保数据不可篡改
 - **SM2 国密算法** — 非对称加密、数字签名与验签
 - **区块链核心** — 创世区块、区块追加、链式哈希校验
+- **序列协议支持** — 索引/切片访问、`len()`、`for` 迭代、反向迭代、`in` 成员判断、`append`/`pop`/`del`
 - **数据持久化** — 整条链存储为 JSON 文件，支持加载与重载
 - **篡改检测** — 修改已有区块内容后校验失败
 - **交互式菜单** — 查看链、新增交易、校验完整性、自动保存
@@ -72,7 +73,20 @@ chain = BlockChain()
 
 print(len(chain))       # 区块总数（含创世区块）
 print(chain[0])         # 按索引访问区块
+print(chain[1:3])       # 切片访问
 print(chain)            # 打印整条链
+
+# 迭代、成员判断等序列协议支持
+for block in chain:
+    print(block)
+
+for block in reversed(chain):
+    print(block)
+
+chain.append(new_block)  # 追加区块
+chain.pop()              # 弹出末尾区块
+del chain[0]             # 删除指定区块
+print(block in chain)    # 成员判断
 ```
 
 ### 使用 AutoBlockChain（自动保存）

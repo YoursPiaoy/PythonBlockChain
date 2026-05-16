@@ -1,5 +1,4 @@
 from ChainBuild import BlockChain, Block, add_block, validate, save
-from BlockBuild import create_genesis_block
 import os
 
 
@@ -9,9 +8,7 @@ class AutoBlockChain(BlockChain):
     - validate() 前自动从数据库重载
     """
 
-    def __init__(self, blocks: list = None, db_path: str = "./BlockChainDatabase/chain.json"):
-        if blocks is None:
-            blocks = [create_genesis_block()]
+    def __init__(self, blocks: list[Block] | None = None, db_path: str = "./BlockChainDatabase/chain.json"):
         super().__init__(blocks)
         self.db_path = db_path
 
@@ -107,7 +104,7 @@ def main():
             clear()
             banner()
             print(f"\n当前链长: {len(chain)} 个区块\n")
-            for i, block in enumerate(chain.blocks):
+            for i, block in enumerate(chain):
                 print(f"--- 区块 {i} ---")
                 print(block)
             pause()

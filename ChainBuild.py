@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import json
 import time
 from pathlib import Path
 from datetime import datetime
 from BlockBuild import Block, create_genesis_block
 
-def add_block(transaction_content: str, blocks_chain:list[Block]) -> Block: 
+def add_block(transaction_content: str, blocks_chain: list[Block] | BlockChain) -> Block:
     """ 添加新区快
         transaction_content: 新区快的交易内容"""
     previous_block = blocks_chain[-1]
@@ -18,7 +20,7 @@ def add_block(transaction_content: str, blocks_chain:list[Block]) -> Block:
     return new_block
 
 
-def validate(blocks_chain:list[Block]) -> bool:
+def validate(blocks_chain: list[Block] | BlockChain) -> bool:
     """遍历整条链，校验每个区块的哈希链是否完整。"""
     try:
         for i, block in enumerate(blocks_chain):
@@ -35,7 +37,7 @@ def validate(blocks_chain:list[Block]) -> bool:
         return False
     
 
-def save(blocks_chain : list[Block], path: str | Path = "./BlockChainDatabase/chain.json") -> None:
+def save(blocks_chain: list[Block] | BlockChain, path: str | Path = "./BlockChainDatabase/chain.json") -> None:
     """将整条链保存为 JSON 文件。"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,14 +83,38 @@ class BlockChain:
         print(f"[加载] 从 {path} 读取 {len(blocks)} 个区块")
         return cls(blocks)
     
-    #让对象支持索引操作
-    def __getitem__(self, index: int) -> Block: 
+    #让对象支持索引操作（含切片）
+    def __getitem__(self, index: int | slice) -> Block | list[Block]:
         return self.blocks[index]
 
     #支持返回链中区块的总数
     def __len__(self) -> int:
         return len(self.blocks)
-    
+
+    #显式迭代支持
+    def __iter__(self):
+        return iter(self.blocks)
+
+    #反向迭代
+    def __reversed__(self):
+        return reversed(self.blocks)
+
+    #in 操作符
+    def __contains__(self, block: object) -> bool:
+        return block in self.blocks
+
+    #追加区块
+    def append(self, block: Block) -> None:
+        self.blocks.append(block)
+
+    #弹出区块
+    def pop(self, index: int = -1) -> Block:
+        return self.blocks.pop(index)
+
+    #del 语句支持
+    def __delitem__(self, index: int | slice) -> None:
+        del self.blocks[index]
+
     #支持规范输出
     def __str__(self) -> str:
         return "\n".join(str(b) for b in self.blocks)
