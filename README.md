@@ -53,14 +53,14 @@ from ChainBuild import BlockChain, add_block, validate, save
 chain = BlockChain()
 
 # 添加交易区块
-add_block("小明向小红转账 100 元", chain.blocks)
-add_block("小红向小刚转账 50 元", chain.blocks)
+add_block("小明向小红转账 100 元", chain)
+add_block("小红向小刚转账 50 元", chain)
 
 # 校验链完整性
-validate(chain.blocks)   # 输出: [校验通过]
+validate(chain)   # 输出: [校验通过]
 
 # 保存到文件
-save(chain.blocks)
+save(chain)
 
 # 从文件加载
 loaded = BlockChain.load()
@@ -120,7 +120,7 @@ dec = CustomsDeclaration(
 
 # 将报关单格式化为字符串上链
 chain = BlockChain()
-add_block(dec.to_str(), chain.blocks)
+add_block(dec.to_str(), chain)
 
 # 直接打印报关单查看
 print(dec)
