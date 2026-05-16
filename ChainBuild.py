@@ -44,14 +44,14 @@ class BlockChain:
         path.parent.mkdir(parents=True, exist_ok=True)
         data = [
             {
-                "index": b.index,
-                "previous_block_hash": b.previous_block_hash,
-                "transaction_content": b.transaction_content,
-                "timestamp": b.timestamp,
-                "timestamp_readable": datetime.fromtimestamp(b.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
-                "self_hash": b.self_hash,
+                "index": block.index,
+                "previous_block_hash": block.previous_block_hash,
+                "transaction_content": block.transaction_content,
+                "timestamp": block.timestamp,
+                "timestamp_readable": datetime.fromtimestamp(block.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
+                "self_hash": block.self_hash,
             }
-            for b in self.blocks
+            for block in self.blocks
         ]
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -61,21 +61,21 @@ class BlockChain:
     def load(cls, path: str | Path = "./BlockChainDatabase/chain.json") -> "BlockChain | None":
         """从 JSON 文件加载整条链。"""
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            with open(path, "r", encoding="utf-8") as datafile:
+                data = json.load(datafile)
         except FileNotFoundError:
             print("文件不存在，请确认数据库路径或是否存在数据库文件")
             return None
         blocks = []
         for item in data:
-            b = Block(
+            block = Block(
                 index=item["index"],
                 previous_block_hash=item["previous_block_hash"],
                 transaction_content=item["transaction_content"],
                 timestamp=item["timestamp"],
             )
-            b.self_hash = item["self_hash"]
-            blocks.append(b)
+            block.self_hash = item["self_hash"]
+            blocks.append(block)
         print(f"[加载] 从 {path} 读取 {len(blocks)} 个区块")
         return cls(blocks)
 

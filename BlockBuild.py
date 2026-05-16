@@ -1,6 +1,8 @@
 from ShangMi import *
 import time
 from datetime import datetime
+from CustomsDeclaration import CustomsDeclaration
+
 
 class Block:
     def __init__(self, index: str, 
