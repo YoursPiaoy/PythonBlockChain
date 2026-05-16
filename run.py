@@ -9,7 +9,7 @@ class AutoBlockChain(BlockChain):
     - validate() 前自动从数据库重载
     """
 
-    def __init__(self, blocks=None, db_path="./BlockChainDatabase/chain.json"):
+    def __init__(self, blocks: list = None, db_path: str = "./BlockChainDatabase/chain.json"):
         if blocks is None:
             blocks = [create_genesis_block()]
         super().__init__(blocks)
