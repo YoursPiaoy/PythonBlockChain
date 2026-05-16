@@ -2,7 +2,7 @@ import json
 import time
 from pathlib import Path
 from datetime import datetime
-from BlockBuild import Block
+from BlockBuild import Block, create_genesis_block
 
 def add_block(transaction_content: str, blocks_chain:list[Block]) -> Block: 
     """ 添加新区快
@@ -57,7 +57,7 @@ def save(blocks_chain : list[Block], path: str | Path = "./BlockChainDatabase/ch
 
 class BlockChain:
     def __init__(self, blocks: list[Block] | None = None):
-        self.blocks = blocks if blocks is not None else [Block.create_genesis_block()]
+        self.blocks = blocks if blocks is not None else [create_genesis_block()]
         
     @classmethod
     def load(cls, path: str | Path = "./BlockChainDatabase/chain.json") -> "BlockChain | None":
