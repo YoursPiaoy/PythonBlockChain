@@ -1,144 +1,94 @@
-from ChainBuild import BlockChain, Block, add_block, validate, save
-import os
+from ChainBuild import BlockChain,add_block,validate,save
+from pathlib import Path
 
+data_path: Path = Path("BlockChainDatabase/chain.json")
+loading_chain: BlockChain | None = None
 
-class AutoBlockChain(BlockChain):
-    """自动保存的区块链：
-    - add_block() 后自动保存到数据库
-    - validate() 前自动从数据库重载
-    """
+def help():
+    print(f"""> help\t\t\t\t显示帮助
+> load \t\t\t\t加载区块链数据库
+> sv \t\t\t\t保存区块链到数据库
+> add  <交易内容>\t\t创建区块并上链
+> create \t\t\t创建新区块链
+> ls\t\t\t\t打印当前加载区块链
+> vld\t\t\t\t检验当前加载区块链的完整性
+> pwd\t\t\t\t打印当前区块链文件所在路径
+> setpath <文件路径>\t\t加载区块链文件所在路径\n\t\t\t\t默认为{data_path}
+> exit\t\t\t\t退出程序""")
 
-    def __init__(self, blocks: list[Block] | None = None, db_path: str = "./BlockChainDatabase/chain.json"):
-        super().__init__(blocks)
-        self.db_path = db_path
+def setpath(path: str | Path = data_path):
+    global data_path
+    data_path = Path(path)
+    print(f"已设置文件路径为{data_path}")
 
-    def add_block(self, transaction_content: str) -> Block:
-        block = add_block(transaction_content, self.blocks)
-        save(self.blocks, self.db_path)
-        print("  >> 已自动保存到数据库")
-        return block
+def load():
+    global loading_chain
+    loading_chain = BlockChain.load(data_path)
 
-    def validate(self) -> bool:
-        loaded = BlockChain.load(self.db_path)
-        if loaded is not None:
-            self.blocks = loaded.blocks
-            print("  >> 已从数据库重新加载，基于磁盘数据进行校验")
-        return validate(self.blocks)
+def sv():
+    if loading_chain is None:
+        print("请先加载或创建区块链")
+        return
+    save(loading_chain, data_path)
 
+def add():
+    content = input("请输入交易内容>").strip()
+    if not content:
+        print("交易内容不能为空")
+        return
+    if loading_chain is None:
+        print("请先加载或创建区块链")
+        return
+    add_block(content, loading_chain)
+    print("区块已添加")
 
-def clear():
-    os.system("cls" if os.name == "nt" else "clear")
+def create():
+    global loading_chain
+    loading_chain = BlockChain()
 
+def ls():
+    if loading_chain is None:
+        print("请先加载或创建区块链")
+        return
+    print(loading_chain)
 
-def pause():
-    input("按 Enter 返回...")
-    clear()
+def vld():
+    if loading_chain is None:
+        print("请先加载或创建区块链")
+        return
+    validate(loading_chain)
 
-
-def banner():
-    print("=" * 60)
-    print("              基于Python的区块链系统")
-    print("=" * 60)
-
+def pwd():
+    print(data_path)
 
 def main():
-    clear()
-    banner()
-
-    db_path = "./BlockChainDatabase/chain.json"
-    chain = None
-
-    # 启动时尝试加载已有数据库
-    loaded = BlockChain.load(db_path)
-    if loaded is None:
-        print("\n未找到区块链数据文件。")
-        while True:
-            gen_choice = input("\n是否生成新的区块链文件？(y/n): ").strip().lower()
-            if gen_choice == "y":
-                path_input = input("请输入保存路径（直接回车使用默认路径./BlockChainDatabase/chain.json）: ").strip()
-                if path_input:
-                    db_path = path_input
-                print(f"\n正在创建新区块链（含创世区块），保存至: {db_path}")
-                chain = AutoBlockChain(db_path=db_path)
-                save(chain.blocks, chain.db_path)
-                break
-            elif gen_choice == "n":
-                while True:
-                    load_choice = input("\n是否从其他地址加载区块链文件？(y/n): ").strip().lower()
-                    if load_choice == "y":
-                        load_path = input("请输入文件路径: ").strip()
-                        if not load_path:
-                            print("路径不能为空。")
-                            continue
-                        loaded = BlockChain.load(load_path)
-                        if loaded is not None:
-                            db_path = load_path
-                            chain = AutoBlockChain(blocks=loaded.blocks, db_path=db_path)
-                            break
-                        else:
-                            print("文件不存在或格式错误，请重新输入。")
-                    elif load_choice == "n":
-                        print("退出程序。")
-                        return
-                    else:
-                        print("无效输入，请输入 y 或 n。")
-                break  # 选择加载后退出外层循环
-            else:
-                print("无效输入，请输入 y 或 n。")
-    else:
-        chain = AutoBlockChain(blocks=loaded.blocks, db_path=db_path)
-        print(f"\n已加载数据库，当前共 {len(chain)} 个区块")
-
-    while True:
-        print("\n" + "─" * 60)
-        print("主菜单")
-        print("  1. 查看整条链")
-        print("  2. 新增区块（输入交易内容上链）")
-        print("  3. 校验完整性（自动从数据库重载后校验）")
-        print("  0. 退出（自动保存）")
-        print("─" * 60)
-
-        choice = input("请选择: ").strip()
-
-        if choice == "1":
-            clear()
-            banner()
-            print(f"\n当前链长: {len(chain)} 个区块\n")
-            for i, block in enumerate(chain):
-                print(f"--- 区块 {i} ---")
-                print(block)
-            pause()
-
-        elif choice == "2":
-            clear()
-            banner()
-            tx_content = input("\n请输入交易内容: ").strip()
-            if not tx_content:
-                print("交易内容不能为空！")
-                pause()
-                continue
-
-            block = chain.add_block(tx_content)
-            print(f"\n上链成功！区块索引: {block.index}")
-            pause()
-
-        elif choice == "3":
-            clear()
-            banner()
-            print("\n正在从数据库重载并校验...\n")
-            valid = chain.validate()
-            print()
-            if valid:
-                print("校验通过 —— 区块链完整，未被篡改")
-            else:
-                print("校验失败 —— 数据已被篡改或链不完整")
-            pause()
-
-        elif choice == "0":
-            save(chain.blocks, chain.db_path)
-            print("数据已保存！")
-            break
-
+    cmd = input(f"{data_path}>").strip().lower().split()
+    if not cmd:
+        return
+    order = cmd[0]
+    argv = cmd[1:]
+    order_dict: dict = {
+        "setpath": setpath,
+        "load": load,
+        "sv": sv,
+        "add": add,
+        "create": create,
+        "ls": ls,
+        "vld": vld,
+        "pwd": pwd,
+        "exit": exit,
+        "help": help,
+    }
+    try:
+        order_dict[order](*argv)
+    except KeyError:
+        print(f"没有 {order} 命令，请重新输入。")
+    except TypeError:
+        print(f"{order} 命令参数错误，请检查参数数量。")
+    except AttributeError:
+        print("请先加载或创建区块链。")
 
 if __name__ == "__main__":
-    main()
+    help()
+    while True:
+        main()

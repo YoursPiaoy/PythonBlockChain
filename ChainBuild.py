@@ -20,7 +20,7 @@ def add_block(transaction_content: str, blocks_chain: list[Block] | BlockChain) 
     return new_block
 
 
-def validate(blocks_chain: list[Block] | BlockChain) -> bool:
+def validate(blocks_chain: BlockChain) -> bool:
     """遍历整条链，校验每个区块的哈希链是否完整。"""
     try:
         for i, block in enumerate(blocks_chain):
@@ -37,7 +37,7 @@ def validate(blocks_chain: list[Block] | BlockChain) -> bool:
         return False
     
 
-def save(blocks_chain: list[Block] | BlockChain, path: str | Path = "./BlockChainDatabase/chain.json") -> None:
+def save(blocks_chain: BlockChain, path: str | Path = "./BlockChainDatabase/chain.json") -> None:
     """将整条链保存为 JSON 文件。"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
