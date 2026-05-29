@@ -1,5 +1,10 @@
+import os
+from datetime import datetime
 from p2pnetwork.node import Node
 import time
+
+
+SEEK_LOG_DIR = os.path.join(os.path.dirname(__file__), "Nodes", "seed")
 
 
 class SeekNode(Node):
@@ -7,9 +12,21 @@ class SeekNode(Node):
     def __init__(self, host, port, id='SEEDNODE', callback=None, max_connections=0):
         super().__init__(host, port, id, callback, max_connections)
         self.standard_name = f"{self.id} @ {self.host}:{self.port}"
+        os.makedirs(SEEK_LOG_DIR, exist_ok=True)
+        self._log_fp = open(os.path.join(SEEK_LOG_DIR, "seed.log"), "a", encoding="utf-8")
+
+    def _write_log(self, msg: str) -> None:
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._log_fp.write(f"[{ts}] [{self.id}] {msg}\n")
+        self._log_fp.flush()
+
+    def _peer_desc(self, node) -> str:
+        return f"{node.host}:{node.port} (id={node.id})"
 
     def inbound_node_connected(self, node):
         super().inbound_node_connected(node)
+        self._write_log(f"节点接入: {self._peer_desc(node)}")
+        print(f"[{self.standard_name}] 节点接入: {self._peer_desc(node)}")
 
         # 把已有节点的地址信息发给新节点，让它去连接
         peers_info = [
@@ -29,6 +46,16 @@ class SeekNode(Node):
             "type": "NEW_PEER",
             "peer": {"host": node.host, "port": int(node.port), "id": node.id}
         }, exclude=[node])
+
+    def outbound_node_connected(self, node):
+        super().outbound_node_connected(node)
+        self._write_log(f"连接节点: {self._peer_desc(node)}")
+        print(f"[{self.standard_name}] 连接节点: {self._peer_desc(node)}")
+
+    def node_disconnected(self, node):
+        super().node_disconnected(node)
+        self._write_log(f"节点断开: {self._peer_desc(node)}")
+        print(f"[{self.standard_name}] 节点断开: {self._peer_desc(node)}")
 
 
 class ConsensusNode(Node):

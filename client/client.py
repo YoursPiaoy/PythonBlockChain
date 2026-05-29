@@ -13,7 +13,10 @@ from p2pnetwork.node import Node
 
 # 导入 ShangMi 模块
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "consensus"))
-from ShangMi import sm2_encrypt, sm2_verify_hash, sm3_hash_string
+from ShangMi import (sm2_encrypt, sm2_decrypt, sm2_verify_hash, sm2_sign_hash,
+                     sm2_generate_keypair, sm3_hash_string)
+
+CLIENT_KEY_FILE = os.path.join(os.path.dirname(__file__), "sm2_key.json")
 
 
 class ClientNode(Node):
@@ -26,6 +29,24 @@ class ClientNode(Node):
         self._result_ok: bool = False
         self._result_data: dict | None = None
         self._validator_pubkeys: dict[str, str] = {}  # node_id → public_key
+        # 客户端自身的 SM2 密钥对
+        self._client_pri, self._client_pub = self._load_or_generate_keypair()
+
+    def _load_or_generate_keypair(self) -> tuple[str, str]:
+        """加载客户端 SM2 密钥对，不存在则自动生成并持久化"""
+        if os.path.isfile(CLIENT_KEY_FILE):
+            with open(CLIENT_KEY_FILE, "r", encoding="utf-8") as f:
+                key = json.load(f)
+            pri, pub = key["private_key"], key["public_key"]
+            print(f"[*] 已加载客户端 SM2 密钥对 ({CLIENT_KEY_FILE})")
+            return pri, pub
+        # 首次运行，生成新密钥对
+        pri, pub = sm2_generate_keypair()
+        os.makedirs(os.path.dirname(CLIENT_KEY_FILE), exist_ok=True)
+        with open(CLIENT_KEY_FILE, "w", encoding="utf-8") as f:
+            json.dump({"private_key": pri, "public_key": pub}, f, indent=2)
+        print(f"[*] 已生成客户端 SM2 密钥对 → {CLIENT_KEY_FILE}")
+        return pri, pub
 
     def load_pubkeys(self, nodes: list[dict]) -> None:
         """从节点配置中提取 SM2 公钥"""
@@ -46,7 +67,20 @@ class ClientNode(Node):
             # 阶段一：共识节点已接收，即将投票
             print(f"\n[接收] 节点 {data.get('node')} 已收到: {data.get('content')}")
         elif msg_type == "TX_RESULT":
-            # SM2 签名验证
+            result_data = data
+
+            # SM2 解密回复数据（共识节点用客户端公钥加密）
+            if data.get("encrypted"):
+                encrypted_payload = data.get("data")
+                try:
+                    decrypted = sm2_decrypt(self._client_pri, self._client_pub, encrypted_payload)
+                    result_data = dict(data)
+                    result_data["data"] = decrypted
+                except Exception:
+                    print("[!] TX_RESULT 解密失败")
+                    return
+
+            # SM2 签名验证（共识节点私钥签名）
             sig = data.get("signature")
             sign_data = data.get("sign_data")
             if sig and sign_data and self._validator_pubkeys:
@@ -58,8 +92,8 @@ class ClientNode(Node):
                     print("[!] 签名验证失败，结果不可信!")
                     return
 
-            self._result_ok = data.get("status") == "ok"
-            self._result_data = data
+            self._result_ok = result_data.get("status") == "ok"
+            self._result_data = result_data
             self._result.set()
         elif msg_type == "PEER_LIST":
             for peer in data.get("peers", []):
@@ -77,13 +111,22 @@ class ClientNode(Node):
         self._result_ok = False
         self._result_data = None
 
-        # SM2 加密交易内容
+        # SM2 加密交易内容 + 客户端签名
         payload = {"type": "USERPOST", "CONTENT": content}
         if self._validator_pubkeys:
             pub_key = next(iter(self._validator_pubkeys.values()))
             encrypted = sm2_encrypt(pub_key, content)
-            payload = {"type": "USERPOST", "CONTENT": encrypted, "encrypted": True}
-            print(f"[*] 已加密交易内容 (SM2)")
+            # 用客户端私钥对原始内容哈希签名
+            content_hash = sm3_hash_string(content)
+            client_sig = sm2_sign_hash(self._client_pri, content_hash)
+            payload = {
+                "type": "USERPOST",
+                "CONTENT": encrypted,
+                "encrypted": True,
+                "client_public_key": self._client_pub,
+                "client_signature": client_sig,
+            }
+            print(f"[*] 已加密交易内容 (SM2) + 客户端签名")
 
         self.send_to_nodes(payload)
         print(f"[*] 已提交交易: {content}  (等待共识结果...)")

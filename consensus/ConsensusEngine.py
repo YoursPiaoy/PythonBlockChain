@@ -8,7 +8,9 @@ import time
 from ConsensusNetwork import SeekNode, ConsensusNode
 from TBFT import TBFTStateMachine
 from ChainBuild import BlockChain, add_block, save
-from ShangMi import sm2_decrypt, sm2_sign_hash, sm3_hash_string
+from ShangMi import (sm2_decrypt, sm2_encrypt, sm2_sign_hash,
+                     sm2_verify_hash, sm3_hash_string)
+from datetime import datetime
 
 
 class TBFTConsensusNode(ConsensusNode):
@@ -22,6 +24,7 @@ class TBFTConsensusNode(ConsensusNode):
         self.validators: list[str] = validators
         self._tx_queue: list[str] = []          # 待上链交易队列
         self._client_nodes: list = []           # 客户端节点（用于回复）
+        self._client_pubkeys: dict = {}         # 客户端 node → public_key
 
         # SM2 密钥对
         self._private_key, self._public_key = self._load_keypair(node_name)
@@ -79,29 +82,37 @@ class TBFTConsensusNode(ConsensusNode):
         save(self.chain, self.chain_path)
         print(f"[{self.standard_name}] 区块落链  height={proposal['height']}  "
               f"data={proposal['data']}")
-        # 构造回复消息
-        reply = {
-            "type": "TX_RESULT",
-            "status": "ok",
-            "height": proposal["height"],
-            "data": proposal["data"],
-        }
-
-        # SM2 签名（让客户端可验证回复来源）
-        if self._private_key and self._public_key:
-            sign_data = f"{proposal['height']}|{proposal['data']}"
-            hash_val = sm3_hash_string(sign_data)
-            sig = sm2_sign_hash(self._private_key, hash_val)
-            reply["signature"] = sig
-            reply["sign_data"] = sign_data
+        original_data = proposal["data"]
 
         # 回复连接本节点的客户端
         for client in self._client_nodes:
+            client_pub = self._client_pubkeys.get(client)
+            reply = {
+                "type": "TX_RESULT",
+                "status": "ok",
+                "height": proposal["height"],
+                "data": original_data,
+            }
+
+            # 用客户端公钥加密回复数据
+            if client_pub and self._private_key and self._public_key:
+                encrypted_data = sm2_encrypt(client_pub, original_data)
+                reply["data"] = encrypted_data
+                reply["encrypted"] = True
+
+                # SM2 签名（签名对象为 height|encrypted_data，不泄露明文）
+                sign_data = f"{proposal['height']}|{encrypted_data}"
+                hash_val = sm3_hash_string(sign_data)
+                sig = sm2_sign_hash(self._private_key, hash_val)
+                reply["signature"] = sig
+                reply["sign_data"] = sign_data
+
             try:
                 self.send_to_node(client, reply)
             except Exception:
                 pass
         self._client_nodes.clear()
+        self._client_pubkeys.clear()
         self._tx_queue.clear()
 
     def _get_block_data(self, height: int, round: int) -> str | None:
@@ -124,6 +135,18 @@ class TBFTConsensusNode(ConsensusNode):
                     raw_content = sm2_decrypt(self._private_key, self._public_key, raw_content)
                 except Exception:
                     print(f"[{self.standard_name}] SM2 解密失败，丢弃消息")
+                    return
+
+            # 验证客户端签名（如果提供了）
+            client_pub = data.get("client_public_key")
+            client_sig = data.get("client_signature")
+            if client_pub and client_sig:
+                content_hash = sm3_hash_string(raw_content)
+                if sm2_verify_hash(client_pub, content_hash, client_sig):
+                    print(f"[{self.standard_name}] 客户端签名验证通过")
+                    self._client_pubkeys[node] = client_pub
+                else:
+                    print(f"[{self.standard_name}] 客户端签名验证失败，丢弃消息")
                     return
 
             self._tx_queue.append(raw_content)
@@ -157,9 +180,30 @@ class TBFTConsensusNode(ConsensusNode):
     def next_round(self):
         self.engine.next_round()
 
+    # —————— P2P 连接事件日志 ——————
+
+    def _peer_desc(self, node) -> str:
+        return f"{node.host}:{node.port} (id={node.id})"
+
+    def _log_peer(self, msg: str) -> None:
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.engine._log(f"[{ts}] {msg}")
+
+    def inbound_node_connected(self, node):
+        super().inbound_node_connected(node)
+        self._log_peer(f"节点接入: {self._peer_desc(node)}")
+
+    def outbound_node_connected(self, node):
+        super().outbound_node_connected(node)
+        self._log_peer(f"连接节点: {self._peer_desc(node)}")
+
+    def node_disconnected(self, node):
+        super().node_disconnected(node)
+        self._log_peer(f"节点断开: {self._peer_desc(node)}")
+
     def stop(self):
-        self.engine.stop()
         super().stop()
+        self.engine.stop()
 
 
 # ==================== 测试入口 ====================
