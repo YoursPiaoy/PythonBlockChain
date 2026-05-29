@@ -1,0 +1,7 @@
+[consensus1] 1:0 NewRound  leader=consensus2
+[consensus1] 收到提案: declaration
+[consensus1] 1:0 Prevote  -> declaration
+[consensus1] Prevote 达成 >2/3
+[consensus1] 1:0 Precommit -> declaration [锁定]
+[consensus1] Precommit 达成 >2/3
+[consensus1] 1:0 COMMIT 区块上链

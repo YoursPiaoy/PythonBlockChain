@@ -7,8 +7,13 @@
 import argparse
 import json
 import os
+import sys
 import threading
 from p2pnetwork.node import Node
+
+# 导入 ShangMi 模块
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "consensus"))
+from ShangMi import sm2_encrypt, sm2_verify_hash, sm3_hash_string
 
 
 class ClientNode(Node):
@@ -20,6 +25,17 @@ class ClientNode(Node):
         self._result: threading.Event = threading.Event()
         self._result_ok: bool = False
         self._result_data: dict | None = None
+        self._validator_pubkeys: dict[str, str] = {}  # node_id → public_key
+
+    def load_pubkeys(self, nodes: list[dict]) -> None:
+        """从节点配置中提取 SM2 公钥"""
+        for n in nodes:
+            pub_key = n.get("public_key")
+            if pub_key:
+                node_id = n.get("id", f"{n.get('host')}:{n.get('port')}")
+                self._validator_pubkeys[node_id] = pub_key
+        if self._validator_pubkeys:
+            print(f"[*] 已加载 {len(self._validator_pubkeys)} 个共识节点公钥")
 
     def node_message(self, node, data):
         if not isinstance(data, dict):
@@ -30,6 +46,18 @@ class ClientNode(Node):
             # 阶段一：共识节点已接收，即将投票
             print(f"\n[接收] 节点 {data.get('node')} 已收到: {data.get('content')}")
         elif msg_type == "TX_RESULT":
+            # SM2 签名验证
+            sig = data.get("signature")
+            sign_data = data.get("sign_data")
+            if sig and sign_data and self._validator_pubkeys:
+                pub_key = next(iter(self._validator_pubkeys.values()))
+                hash_val = sm3_hash_string(sign_data)
+                if sm2_verify_hash(pub_key, hash_val, sig):
+                    print("[*] 签名验证通过")
+                else:
+                    print("[!] 签名验证失败，结果不可信!")
+                    return
+
             self._result_ok = data.get("status") == "ok"
             self._result_data = data
             self._result.set()
@@ -49,7 +77,15 @@ class ClientNode(Node):
         self._result_ok = False
         self._result_data = None
 
-        self.send_to_nodes({"type": "USERPOST", "CONTENT": content})
+        # SM2 加密交易内容
+        payload = {"type": "USERPOST", "CONTENT": content}
+        if self._validator_pubkeys:
+            pub_key = next(iter(self._validator_pubkeys.values()))
+            encrypted = sm2_encrypt(pub_key, content)
+            payload = {"type": "USERPOST", "CONTENT": encrypted, "encrypted": True}
+            print(f"[*] 已加密交易内容 (SM2)")
+
+        self.send_to_nodes(payload)
         print(f"[*] 已提交交易: {content}  (等待共识结果...)")
 
         if self._result.wait(timeout=self.timeout):
@@ -124,6 +160,7 @@ def main():
         return
 
     client = ClientNode(args.host, args.port, timeout=args.timeout)
+    client.load_pubkeys(nodes)
     client.start()
 
     if not try_connect_nodes(client, nodes):

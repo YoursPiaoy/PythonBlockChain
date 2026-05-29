@@ -2,11 +2,13 @@
 TBFT 共识节点 — 打通 TBFTStateMachine 和 P2P 网络层
 """
 
+import json
 import os
 import time
 from ConsensusNetwork import SeekNode, ConsensusNode
 from TBFT import TBFTStateMachine
 from ChainBuild import BlockChain, add_block, save
+from ShangMi import sm2_decrypt, sm2_sign_hash, sm3_hash_string
 
 
 class TBFTConsensusNode(ConsensusNode):
@@ -20,6 +22,9 @@ class TBFTConsensusNode(ConsensusNode):
         self.validators: list[str] = validators
         self._tx_queue: list[str] = []          # 待上链交易队列
         self._client_nodes: list = []           # 客户端节点（用于回复）
+
+        # SM2 密钥对
+        self._private_key, self._public_key = self._load_keypair(node_name)
 
         # 区块链持久化
         self.chain_path = os.path.join(self._DATA_DIR, node_name, "chain.json")
@@ -46,6 +51,19 @@ class TBFTConsensusNode(ConsensusNode):
             print(f"[{self.standard_name}] 已加载链  height={len(chain)}")
         return chain
 
+    def _load_keypair(self, node_name: str) -> tuple[str | None, str | None]:
+        """从 Nodes/<node_name>/sm2_key.json 加载 SM2 密钥对"""
+        key_path = os.path.join(self._DATA_DIR, node_name, "sm2_key.json")
+        if not os.path.isfile(key_path):
+            print(f"[{node_name}] 未找到 SM2 密钥文件 {key_path}，将使用明文模式")
+            return None, None
+        with open(key_path, "r", encoding="utf-8") as f:
+            key_data = json.load(f)
+        pri = key_data.get("private_key")
+        pub = key_data.get("public_key")
+        print(f"[{node_name}] 已加载 SM2 密钥对")
+        return pri, pub
+
     def _broadcast_consensus(self, msg: dict) -> None:
         """TBFT 引擎 → P2P 网络广播（含自投票）"""
         self.send_to_nodes(msg)
@@ -61,15 +79,26 @@ class TBFTConsensusNode(ConsensusNode):
         save(self.chain, self.chain_path)
         print(f"[{self.standard_name}] 区块落链  height={proposal['height']}  "
               f"data={proposal['data']}")
+        # 构造回复消息
+        reply = {
+            "type": "TX_RESULT",
+            "status": "ok",
+            "height": proposal["height"],
+            "data": proposal["data"],
+        }
+
+        # SM2 签名（让客户端可验证回复来源）
+        if self._private_key and self._public_key:
+            sign_data = f"{proposal['height']}|{proposal['data']}"
+            hash_val = sm3_hash_string(sign_data)
+            sig = sm2_sign_hash(self._private_key, hash_val)
+            reply["signature"] = sig
+            reply["sign_data"] = sign_data
+
         # 回复连接本节点的客户端
         for client in self._client_nodes:
             try:
-                self.send_to_node(client, {
-                    "type": "TX_RESULT",
-                    "status": "ok",
-                    "height": proposal["height"],
-                    "data": proposal["data"],
-                })
+                self.send_to_node(client, reply)
             except Exception:
                 pass
         self._client_nodes.clear()
@@ -87,17 +116,27 @@ class TBFTConsensusNode(ConsensusNode):
 
         # 客户端交易 → 入队 + 广播触发共识
         if msg_type == "USERPOST":
-            self._tx_queue.append(data["CONTENT"])
+            raw_content = data["CONTENT"]
+
+            # SM2 解密（如果客户端加密了）
+            if data.get("encrypted") and self._private_key and self._public_key:
+                try:
+                    raw_content = sm2_decrypt(self._private_key, self._public_key, raw_content)
+                except Exception:
+                    print(f"[{self.standard_name}] SM2 解密失败，丢弃消息")
+                    return
+
+            self._tx_queue.append(raw_content)
             if node not in self._client_nodes:
                 self._client_nodes.append(node)
             # 阶段一：立即回复客户端确认收到
             self.send_to_node(node, {
                 "type": "TX_RECEIVED",
                 "node": self.standard_name,
-                "content": data["CONTENT"],
+                "content": raw_content,
             })
             self.send_to_nodes({"type": "CONSENSUS_TRIGGER",
-                                "CONTENT": data["CONTENT"]})
+                                "CONTENT": raw_content})
             self.next_round()
             return
 

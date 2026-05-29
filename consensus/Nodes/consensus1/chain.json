@@ -6,5 +6,13 @@
     "timestamp": 1780037049.866895,
     "timestamp_readable": "2026-05-29 14:44:09",
     "self_hash": "19fa6825ea3352aa18b2db9654d758b1d2bd365de42323a0637e4e84dee5e682"
+  },
+  {
+    "index": "1",
+    "previous_block_hash": "19fa6825ea3352aa18b2db9654d758b1d2bd365de42323a0637e4e84dee5e682",
+    "transaction_content": "declaration",
+    "timestamp": 1780048909.4715753,
+    "timestamp_readable": "2026-05-29 18:01:49",
+    "self_hash": "eec2a2f9d8dc352dafaf39f4d96037269e710d23ab14ae2b5e404eb14884215c"
   }
 ]
