@@ -1,7 +1,6 @@
-from ShangMi import *
+from ShangMi import sm3_hash_string
 import time
 from datetime import datetime
-from CustomsDeclaration import CustomsDeclaration
 
 def create_genesis_block():
     """生成创世区块"""
@@ -9,26 +8,23 @@ def create_genesis_block():
 
 
 class Block:
-    def __init__(self, index: str, 
-                 previous_block_hash: str, 
-                 transaction_content: str, 
-                 timestamp: float = time.time()
-                 ): # 初始化参数
-        
+    def __init__(self, index: str,
+                 previous_block_hash: str,
+                 transaction_content: str,
+                 timestamp: float | None = None
+                 ):
         self.index = index
         self.previous_block_hash = previous_block_hash
         self.transaction_content = transaction_content
-        self.timestamp = timestamp
+        self.timestamp = timestamp if timestamp is not None else time.time()
         self.self_hash = self.get_self_hash()
     
-    def get_self_hash(self): 
+    def get_self_hash(self):
         """生成当前对象哈希"""
         pending_string = (self.previous_block_hash + #前区块哈希
                           self.index +  #区块序号
-                          self.transaction_content + #交易内容
-                          str(self.timestamp) # 时间戳
+                          self.transaction_content #交易内容
                           )
-        
         return sm3_hash_string(pending_string)
     
     def __str__(self):

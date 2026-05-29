@@ -1,16 +1,14 @@
+[2026-05-29 19:08:56] 连接节点: 127.0.0.1:8001 (id=SEEDNODE)
+[2026-05-29 19:08:56] 连接节点: 127.0.0.1:8002 (id=consensus1)
+[2026-05-29 19:08:56] 节点接入: 127.0.0.1:8002 (id=consensus1)
+[2026-05-29 19:08:57] 节点接入: 127.0.0.1:8004 (id=consensus3)
 [consensus2] 1:0 NewRound  leader=consensus2
 [consensus2] 1:0 Proposal  (我是提议者)
-[consensus2] 广播提案: declaration
-[consensus2] 1:0 Prevote  -> declaration
+[consensus2] 广播提案: 测试交易: 张三向李四转账100元
+[consensus2] 1:0 Prevote  -> 测试交易: 张三向李四转账100元
+[2026-05-29 19:08:59] 节点断开: 127.0.0.1:8002 (id=consensus1)
 [consensus2] Prevote 达成 >2/3
-[consensus2] 1:0 Precommit -> declaration [锁定]
+[consensus2] POL 达成，锁定区块
+[consensus2] 1:0 Precommit -> 测试交易: 张三向李四转账100元 [锁定]
 [consensus2] Precommit 达成 >2/3
 [consensus2] 1:0 COMMIT 区块上链
-[2026-05-29 18:14:03] 连接节点: 127.0.0.1:8001 (id=SEEDNODE)
-[2026-05-29 18:14:03] 连接节点: 127.0.0.1:8002 (id=consensus1)
-[2026-05-29 18:14:03] 节点接入: 127.0.0.1:8002 (id=consensus1)
-[2026-05-29 18:14:03] 节点接入: 127.0.0.1:8004 (id=consensus3)
-[2026-05-29 18:25:44] 连接节点: 127.0.0.1:8001 (id=SEEDNODE)
-[2026-05-29 18:25:44] 连接节点: 127.0.0.1:8002 (id=consensus1)
-[2026-05-29 18:25:45] 节点接入: 127.0.0.1:8002 (id=consensus1)
-[2026-05-29 18:25:45] 节点接入: 127.0.0.1:8004 (id=consensus3)

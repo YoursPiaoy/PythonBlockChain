@@ -6,15 +6,17 @@ from pathlib import Path
 from datetime import datetime
 from BlockBuild import Block, create_genesis_block
 
-def add_block(transaction_content: str, blocks_chain: list[Block] | BlockChain) -> Block:
-    """ 添加新区快
-        transaction_content: 新区快的交易内容"""
+def add_block(transaction_content: str, blocks_chain: list[Block] | BlockChain,
+              timestamp: float | None = None) -> Block:
+    """添加新区块
+       transaction_content: 新区块的交易内容
+       timestamp: 可选时间戳，None 则使用当前时间"""
     previous_block = blocks_chain[-1]
     new_block = Block(
         index=str(len(blocks_chain)),
         previous_block_hash=previous_block.self_hash,
         transaction_content=transaction_content,
-        timestamp=time.time(),
+        timestamp=timestamp if timestamp is not None else time.time(),
     )
     blocks_chain.append(new_block)
     return new_block

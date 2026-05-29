@@ -5,12 +5,14 @@ TBFT 共识节点 — 打通 TBFTStateMachine 和 P2P 网络层
 import json
 import os
 import time
+from datetime import datetime
+
+from BlockBuild import Block
+from ChainBuild import BlockChain, add_block, save, validate
 from ConsensusNetwork import SeekNode, ConsensusNode
-from TBFT import TBFTStateMachine
-from ChainBuild import BlockChain, add_block, save
 from ShangMi import (sm2_decrypt, sm2_encrypt, sm2_sign_hash,
                      sm2_verify_hash, sm3_hash_string)
-from datetime import datetime
+from TBFT import TBFTStateMachine
 
 
 class TBFTConsensusNode(ConsensusNode):
@@ -19,12 +21,14 @@ class TBFTConsensusNode(ConsensusNode):
     _DATA_DIR = os.path.join(os.path.dirname(__file__), "Nodes")
 
     def __init__(self, host: str, port: int, node_name: str,
-                 validators: list[str], max_connections: int = 0):
+                 validators: list[str], max_connections: int = 0,
+                 validator_pubkeys: dict[str, str] | None = None):
         super().__init__(host, port, node_name, callback=None, max_connections=max_connections)
         self.validators: list[str] = validators
         self._tx_queue: list[str] = []          # 待上链交易队列
-        self._client_nodes: list = []           # 客户端节点（用于回复）
-        self._client_pubkeys: dict = {}         # 客户端 node → public_key
+        self._seen_txs: set[str] = set()       # 已见交易哈希，防重复
+        self._clients: dict = {}               # 客户端 node → public_key
+        self._validator_pubkeys: dict[str, str] = validator_pubkeys or {}
 
         # SM2 密钥对
         self._private_key, self._public_key = self._load_keypair(node_name)
@@ -44,7 +48,7 @@ class TBFTConsensusNode(ConsensusNode):
         self.engine.height = len(self.chain)
 
     def _init_chain(self):
-        """加载已有链，不存在则创建创世区块"""
+        """加载已有链，不存在则创建创世区块。校验失败则回退到创世块并备份损坏文件。"""
         chain = BlockChain.load(self.chain_path)
         if chain is None:
             chain = BlockChain()
@@ -52,6 +56,18 @@ class TBFTConsensusNode(ConsensusNode):
             print(f"[{self.standard_name}] 未找到链文件，已生成创世区块")
         else:
             print(f"[{self.standard_name}] 已加载链  height={len(chain)}")
+            if not validate(chain):
+                print(f"[{self.standard_name}] 链校验失败，备份损坏文件并重建创世区块")
+                # 备份损坏的链文件
+                backup_path = self.chain_path + ".corrupted"
+                try:
+                    os.rename(self.chain_path, backup_path)
+                    print(f"[{self.standard_name}] 已备份损坏链 -> {backup_path}")
+                except OSError:
+                    pass
+                chain = BlockChain()
+                save(chain, self.chain_path)
+                print(f"[{self.standard_name}] 已从创世区块重建链")
         return chain
 
     def _load_keypair(self, node_name: str) -> tuple[str | None, str | None]:
@@ -68,30 +84,59 @@ class TBFTConsensusNode(ConsensusNode):
         return pri, pub
 
     def _broadcast_consensus(self, msg: dict) -> None:
-        """TBFT 引擎 → P2P 网络广播（含自投票）"""
-        self.send_to_nodes(msg)
-        # 网络广播不包含自己，手动计入自投票
+        """TBFT 引擎 → P2P 网络广播（含自投票 + SM2 签名）"""
+        # 对共识消息签名
+        if self._private_key:
+            sign_str = self._build_sign_string(msg)
+            hash_val = sm3_hash_string(sign_str)
+            msg["_sig"] = sm2_sign_hash(self._private_key, hash_val)
+            msg["_signer"] = self.id
+        # 先计入自投票，再广播到网络
         if msg["type"] == "PREVOTE":
             self.engine.on_prevote(msg)
         elif msg["type"] == "PRECOMMIT":
             self.engine.on_precommit(msg)
+        self.send_to_nodes(msg)
+
+    def _build_sign_string(self, msg: dict) -> str:
+        """构建签名用的规范字符串"""
+        t = msg["type"]
+        if t == "PROPOSAL":
+            return f"{msg['height']}|{msg['round']}|{msg['data']}|{msg['proposer']}|{msg.get('timestamp', '')}"
+        elif t in ("PREVOTE", "PRECOMMIT"):
+            return f"{msg['height']}|{msg['round']}|{msg['voter']}|{msg['vote'] or 'nil'}"
+        return str(msg)
+
+    def _verify_msg(self, msg: dict) -> bool:
+        """验证共识消息的 SM2 签名"""
+        sig = msg.get("_sig")
+        signer = msg.get("_signer")
+        if not sig or not signer:
+            return False
+        pub_key = self._validator_pubkeys.get(signer)
+        if not pub_key:
+            print(f"[{self.standard_name}] 未找到节点 {signer} 的公钥")
+            return False
+        sign_str = self._build_sign_string(msg)
+        hash_val = sm3_hash_string(sign_str)
+        return sm2_verify_hash(pub_key, hash_val, sig)
 
     def _on_block_committed(self, proposal: dict) -> None:
         """区块达成共识，落链回调"""
-        add_block(proposal["data"], self.chain)
+        add_block(proposal["data"], self.chain, proposal.get("timestamp"))
         save(self.chain, self.chain_path)
         print(f"[{self.standard_name}] 区块落链  height={proposal['height']}  "
               f"data={proposal['data']}")
         original_data = proposal["data"]
 
         # 回复连接本节点的客户端
-        for client in self._client_nodes:
-            client_pub = self._client_pubkeys.get(client)
+        for client, client_pub in self._clients.items():
             reply = {
                 "type": "TX_RESULT",
                 "status": "ok",
                 "height": proposal["height"],
                 "data": original_data,
+                "signer_id": self.id,
             }
 
             # 用客户端公钥加密回复数据
@@ -111,9 +156,7 @@ class TBFTConsensusNode(ConsensusNode):
                 self.send_to_node(client, reply)
             except Exception:
                 pass
-        self._client_nodes.clear()
-        self._client_pubkeys.clear()
-        self._tx_queue.clear()
+        self._clients.clear()
 
     def _get_block_data(self, height: int, round: int) -> str | None:
         """提议者从队列取交易数据，队列空则跳过本轮"""
@@ -144,38 +187,112 @@ class TBFTConsensusNode(ConsensusNode):
                 content_hash = sm3_hash_string(raw_content)
                 if sm2_verify_hash(client_pub, content_hash, client_sig):
                     print(f"[{self.standard_name}] 客户端签名验证通过")
-                    self._client_pubkeys[node] = client_pub
+                    self._clients[node] = client_pub
                 else:
                     print(f"[{self.standard_name}] 客户端签名验证失败，丢弃消息")
                     return
 
+            # 防重复：用交易内容哈希判断是否已处理过
+            tx_hash = sm3_hash_string(raw_content)
+            if tx_hash in self._seen_txs:
+                return
+            self._seen_txs.add(tx_hash)
             self._tx_queue.append(raw_content)
-            if node not in self._client_nodes:
-                self._client_nodes.append(node)
-            # 阶段一：立即回复客户端确认收到
+            self._clients.setdefault(node, None)
+            # 立即回复客户端确认收到
             self.send_to_node(node, {
                 "type": "TX_RECEIVED",
                 "node": self.standard_name,
                 "content": raw_content,
             })
-            self.send_to_nodes({"type": "CONSENSUS_TRIGGER",
-                                "CONTENT": raw_content})
-            self.next_round()
+            # 转发给其他共识节点，确保提议者能收到（防重复已在对方节点处理）
+            self.send_to_nodes({
+                "type": "USERPOST",
+                "CONTENT": raw_content,
+            }, exclude=[node])
+            # 仅在空闲时触发新一轮
+            if self.engine.step == "NEW_ROUND":
+                self.next_round()
             return
 
-        # 其他节点转发来的交易触发
-        if msg_type == "CONSENSUS_TRIGGER":
-            self._tx_queue.append(data["CONTENT"])
-            self.next_round()
+        # 共识消息 → TBFT 引擎（含签名验证）
+        if msg_type in ("PROPOSAL", "PREVOTE", "PRECOMMIT"):
+            if self._validator_pubkeys and not self._verify_msg(data):
+                print(f"[{self.standard_name}] 签名验证失败，丢弃 {msg_type} 消息")
+                return
+            if msg_type == "PROPOSAL":
+                self.engine.on_proposal(data)
+            elif msg_type == "PREVOTE":
+                self.engine.on_prevote(data)
+            elif msg_type == "PRECOMMIT":
+                self.engine.on_precommit(data)
+
+        # 链同步消息
+        if msg_type == "SYNC_HELLO":
+            peer_height = data["height"]
+            peer_hash = data["last_hash"]
+            local_height = len(self.chain)
+            local_hash = self.chain[-1].self_hash
+            if peer_height > local_height:
+                self._request_sync(node, local_height)
+            elif peer_height == local_height and peer_hash != local_hash:
+                print(f"[{self.standard_name}] 警告: 分叉检测! "
+                      f"相同高度 {local_height} 但哈希不同, "
+                      f"本地={local_hash[:16]}... 远端={peer_hash[:16]}...")
             return
 
-        # 共识消息 → TBFT 引擎
-        if msg_type == "PROPOSAL":
-            self.engine.on_proposal(data)
-        elif msg_type == "PREVOTE":
-            self.engine.on_prevote(data)
-        elif msg_type == "PRECOMMIT":
-            self.engine.on_precommit(data)
+        if msg_type == "SYNC_REQUEST":
+            from_height = data["from_height"]
+            blocks = []
+            for i in range(from_height, len(self.chain)):
+                b = self.chain[i]
+                blocks.append({
+                    "index": b.index,
+                    "previous_block_hash": b.previous_block_hash,
+                    "transaction_content": b.transaction_content,
+                    "timestamp": b.timestamp,
+                    "self_hash": b.self_hash,
+                })
+            self.send_to_node(node, {
+                "type": "SYNC_RESPONSE",
+                "blocks": blocks,
+            })
+            return
+
+        if msg_type == "SYNC_RESPONSE":
+            blocks_data = data["blocks"]
+            if not blocks_data:
+                return
+            pre_sync_height = len(self.chain)
+            for bd in blocks_data:
+                block = Block(
+                    index=bd["index"],
+                    previous_block_hash=bd["previous_block_hash"],
+                    transaction_content=bd["transaction_content"],
+                    timestamp=bd["timestamp"],
+                )
+                block.self_hash = bd["self_hash"]
+                if block.self_hash != block.get_self_hash():
+                    print(f"[{self.standard_name}] 同步区块 {bd['index']} 哈希校验失败，回滚")
+                    del self.chain.blocks[pre_sync_height:]
+                    return
+                if len(self.chain) > 0 and block.previous_block_hash != self.chain[-1].self_hash:
+                    print(f"[{self.standard_name}] 同步区块 {bd['index']} 链接校验失败，回滚")
+                    del self.chain.blocks[pre_sync_height:]
+                    return
+                self.chain.append(block)
+            # 整链校验
+            if not validate(self.chain):
+                print(f"[{self.standard_name}] 同步后整链校验失败，回滚")
+                del self.chain.blocks[pre_sync_height:]
+                return
+            save(self.chain, self.chain_path)
+            self.engine.height = len(self.chain)
+            print(f"[{self.standard_name}] 链同步完成, 新高度={len(self.chain)}")
+            # 同步完成后，如果空闲则启动新轮
+            if self.engine.step == "NEW_ROUND":
+                self.next_round()
+            return
 
     def next_round(self):
         self.engine.next_round()
@@ -196,6 +313,24 @@ class TBFTConsensusNode(ConsensusNode):
     def outbound_node_connected(self, node):
         super().outbound_node_connected(node)
         self._log_peer(f"连接节点: {self._peer_desc(node)}")
+        # 连接建立后发起链同步
+        self._send_sync_hello(node)
+
+    def _send_sync_hello(self, node) -> None:
+        """向对等节点发送链摘要信息"""
+        last_block = self.chain[-1]
+        self.send_to_node(node, {
+            "type": "SYNC_HELLO",
+            "height": len(self.chain),
+            "last_hash": last_block.self_hash,
+        })
+
+    def _request_sync(self, node, from_height: int) -> None:
+        """请求对等节点发送从 from_height 开始的区块"""
+        self.send_to_node(node, {
+            "type": "SYNC_REQUEST",
+            "from_height": from_height,
+        })
 
     def node_disconnected(self, node):
         super().node_disconnected(node)

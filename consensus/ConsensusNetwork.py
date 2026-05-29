@@ -16,6 +16,8 @@ class SeekNode(Node):
         self._log_fp = open(os.path.join(SEEK_LOG_DIR, "seed.log"), "a", encoding="utf-8")
 
     def _write_log(self, msg: str) -> None:
+        if not self._log_fp:
+            return
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._log_fp.write(f"[{ts}] [{self.id}] {msg}\n")
         self._log_fp.flush()
@@ -56,6 +58,17 @@ class SeekNode(Node):
         super().node_disconnected(node)
         self._write_log(f"节点断开: {self._peer_desc(node)}")
         print(f"[{self.standard_name}] 节点断开: {self._peer_desc(node)}")
+
+    def stop(self):
+        super().stop()
+        if self._log_fp:
+            self._log_fp.close()
+            self._log_fp = None
+
+    def __del__(self):
+        if hasattr(self, '_log_fp') and self._log_fp:
+            self._log_fp.close()
+            self._log_fp = None
 
 
 class ConsensusNode(Node):

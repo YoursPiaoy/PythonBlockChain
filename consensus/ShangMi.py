@@ -71,7 +71,8 @@ def sm2_verify_hash(public_key: str, hash_hex: str, signature: str) -> bool:
     sm2 = CryptSM2(private_key="", public_key=public_key)
     try:
         return sm2.verify(signature, bytes.fromhex(hash_hex))
-    except Exception:
+    except (ValueError, TypeError) as e:
+        print(f"[SM2] 签名验证异常: {e}")
         return False
 
 

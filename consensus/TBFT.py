@@ -5,6 +5,7 @@ NewRound -> Proposal -> Prevote -> Precommit -> Commit
 """
 
 import threading
+import time
 
 
 class TBFTStateMachine:
@@ -105,6 +106,12 @@ class TBFTStateMachine:
             self._log_fp.close()
             self._log_fp = None
 
+    def __del__(self):
+        """析构兜底：防止 stop() 未被调用时文件句柄泄漏"""
+        if hasattr(self, '_log_fp') and self._log_fp:
+            self._log_fp.close()
+            self._log_fp = None
+
     # ==================== 状态转移 ====================
 
     def goto(self, step):
@@ -145,7 +152,8 @@ class TBFTStateMachine:
             if self.step != "PROPOSAL" or not self.is_proposer:
                 return None
             self.proposal = {"height": self.height, "round": self.round,
-                             "data": data, "proposer": self.node_id}
+                             "data": data, "proposer": self.node_id,
+                             "timestamp": time.time()}
             self.on_broadcast({"type": "PROPOSAL", **self.proposal})
             self._log(f"[{self.node_id}] 广播提案: {data}")
             self.goto("PREVOTE")
@@ -185,6 +193,11 @@ class TBFTStateMachine:
         self._log(f"[{self.node_id}] {self.height}:{self.round} Prevote  -> {vote or 'nil'}")
 
     def add_prevote(self, voter, vote):
+        # 双投票检测
+        prev = self.prevotes.get(voter)
+        if prev is not None and prev != vote:
+            self._log(f"[{self.node_id}] 警告: {voter} 双投票! "
+                      f"prevote h{self.height} r{self.round}: {prev} -> {vote}")
         self.prevotes[voter] = vote
         if self._has_majority(self.prevotes):
             self._log(f"[{self.node_id}] Prevote 达成 >2/3")
@@ -193,8 +206,12 @@ class TBFTStateMachine:
     # ==================== 4. PRECOMMIT ====================
 
     def enter_precommit(self):
-        if self.proposal:
-            self.locked_block = self.proposal   # 锁定
+        # 仅在 >2/3 prevote 对同一非 nil 区块时锁定 (Proof-of-Lock)
+        if self.proposal and self.proposal.get("data"):
+            winner = self._majority_value(self.prevotes)
+            if winner and winner == self.proposal["data"]:
+                self.locked_block = self.proposal
+                self._log(f"[{self.node_id}] POL 达成，锁定区块")
         proposal = self.proposal or self.locked_block
         vote = proposal["data"] if proposal else None
         self.on_broadcast({
@@ -206,6 +223,11 @@ class TBFTStateMachine:
         self._log(f"[{self.node_id}] {self.height}:{self.round} Precommit -> {vote or 'nil'}{lock}")
 
     def add_precommit(self, voter, vote):
+        # 双投票检测
+        prev = self.precommits.get(voter)
+        if prev is not None and prev != vote:
+            self._log(f"[{self.node_id}] 警告: {voter} 双投票! "
+                      f"precommit h{self.height} r{self.round}: {prev} -> {vote}")
         self.precommits[voter] = vote
         if self._has_majority(self.precommits):
             self._log(f"[{self.node_id}] Precommit 达成 >2/3")
@@ -238,7 +260,22 @@ class TBFTStateMachine:
     # ==================== 投票判定 ====================
 
     def _has_majority(self, votes):
+        """检查是否达成 >2/3 多数（排除 nil 投票）"""
+        non_nil = {k: v for k, v in votes.items() if v is not None}
+        if not non_nil:
+            return False
         counts = {}
-        for v in votes.values():
+        for v in non_nil.values():
             counts[v] = counts.get(v, 0) + 1
         return max(counts.values()) >= self.threshold
+
+    def _majority_value(self, votes):
+        """返回获得 >2/3 多数的值，无则返回 None"""
+        non_nil = {k: v for k, v in votes.items() if v is not None}
+        if not non_nil:
+            return None
+        counts = {}
+        for v in non_nil.values():
+            counts[v] = counts.get(v, 0) + 1
+        winner = max(counts, key=counts.get)
+        return winner if counts[winner] >= self.threshold else None

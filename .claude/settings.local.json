@@ -3,7 +3,10 @@
     "allow": [
       "Bash(rm -rf Nodes/)",
       "Bash(python test_client_integration.py)",
-      "Bash(python consensus/generate_keys.py)"
+      "Bash(python consensus/generate_keys.py)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import json; [print\\(f'consensus{i}:', *[f'  block {b[\\\\\"index\\\\\"]}: hash={b[\\\\\"self_hash\\\\\"][:32]}...' for b in json.load\\(open\\(f'consensus/Nodes/consensus{i}/chain.json', encoding='utf-8'\\)\\)], sep='\\\\n'\\) for i in [1,2,3]]\")",
+      "Bash(xxd /d/Lin07/Documents/Python_Program/Python_BlockChain/README.md)"
     ]
   }
 }

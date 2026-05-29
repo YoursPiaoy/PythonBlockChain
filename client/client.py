@@ -7,14 +7,11 @@
 import argparse
 import json
 import os
-import sys
 import threading
 from p2pnetwork.node import Node
 
-# 导入 ShangMi 模块
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "consensus"))
-from ShangMi import (sm2_encrypt, sm2_decrypt, sm2_verify_hash, sm2_sign_hash,
-                     sm2_generate_keypair, sm3_hash_string)
+from consensus.ShangMi import (sm2_encrypt, sm2_decrypt, sm2_verify_hash, sm2_sign_hash,
+                                sm2_generate_keypair, sm3_hash_string)
 
 CLIENT_KEY_FILE = os.path.join(os.path.dirname(__file__), "sm2_key.json")
 
@@ -83,8 +80,12 @@ class ClientNode(Node):
             # SM2 签名验证（共识节点私钥签名）
             sig = data.get("signature")
             sign_data = data.get("sign_data")
-            if sig and sign_data and self._validator_pubkeys:
-                pub_key = next(iter(self._validator_pubkeys.values()))
+            signer_id = data.get("signer_id")
+            if sig and sign_data and signer_id and self._validator_pubkeys:
+                pub_key = self._validator_pubkeys.get(signer_id)
+                if pub_key is None:
+                    print(f"[!] 未找到节点 {signer_id} 的公钥，无法验证签名")
+                    return
                 hash_val = sm3_hash_string(sign_data)
                 if sm2_verify_hash(pub_key, hash_val, sig):
                     print("[*] 签名验证通过")
@@ -111,22 +112,23 @@ class ClientNode(Node):
         self._result_ok = False
         self._result_data = None
 
-        # SM2 加密交易内容 + 客户端签名
+        # SM2 加密交易内容 + 客户端签名（使用已连接节点的公钥）
         payload = {"type": "USERPOST", "CONTENT": content}
-        if self._validator_pubkeys:
-            pub_key = next(iter(self._validator_pubkeys.values()))
-            encrypted = sm2_encrypt(pub_key, content)
-            # 用客户端私钥对原始内容哈希签名
-            content_hash = sm3_hash_string(content)
-            client_sig = sm2_sign_hash(self._client_pri, content_hash)
-            payload = {
-                "type": "USERPOST",
-                "CONTENT": encrypted,
-                "encrypted": True,
-                "client_public_key": self._client_pub,
-                "client_signature": client_sig,
-            }
-            print(f"[*] 已加密交易内容 (SM2) + 客户端签名")
+        if self._validator_pubkeys and self.all_nodes:
+            target_id = self.all_nodes[0].id
+            pub_key = self._validator_pubkeys.get(target_id)
+            if pub_key:
+                encrypted = sm2_encrypt(pub_key, content)
+                content_hash = sm3_hash_string(content)
+                client_sig = sm2_sign_hash(self._client_pri, content_hash)
+                payload = {
+                    "type": "USERPOST",
+                    "CONTENT": encrypted,
+                    "encrypted": True,
+                    "client_public_key": self._client_pub,
+                    "client_signature": client_sig,
+                }
+                print(f"[*] 已加密交易内容 (SM2) + 客户端签名")
 
         self.send_to_nodes(payload)
         print(f"[*] 已提交交易: {content}  (等待共识结果...)")

@@ -62,8 +62,10 @@ def main():
     seed_cfg = config["seed"]
     validator_list = config["validators"]
 
-    # 提取验证者 id 列表（传给 TBFT 引擎，全量）
+    # 提取验证者 id 列表和公钥（传给 TBFT 引擎，全量）
     validator_ids = [v["id"] for v in validator_list]
+    validator_pubkeys = {v["id"]: v["public_key"] for v in validator_list
+                         if v.get("public_key")}
 
     # —————— 区分本机节点和远端节点 ——————
     local_validators = [v for v in validator_list if v.get("local", False)]
@@ -121,6 +123,7 @@ def main():
             port=v["port"],
             node_name=v["id"],
             validators=validator_ids,
+            validator_pubkeys=validator_pubkeys,
         )
         node.start()
         nodes.append(node)
