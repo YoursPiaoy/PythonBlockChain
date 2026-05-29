@@ -241,6 +241,7 @@ class TBFTStateMachine:
         self.height += 1
         self.round = 0
         self.locked_block = None
+        self.goto("NEW_ROUND")
 
     def next_round(self):
         """启动下一轮共识（外部调用）"""

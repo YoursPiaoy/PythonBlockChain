@@ -10,8 +10,10 @@ import os
 import threading
 from p2pnetwork.node import Node
 
-from consensus.ShangMi import (sm2_encrypt, sm2_decrypt, sm2_verify_hash, sm2_sign_hash,
-                                sm2_generate_keypair, sm3_hash_string)
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "consensus"))
+from ShangMi import (sm2_encrypt, sm2_decrypt, sm2_verify_hash, sm2_sign_hash,
+                     sm2_generate_keypair, sm3_hash_string)
 
 CLIENT_KEY_FILE = os.path.join(os.path.dirname(__file__), "sm2_key.json")
 

@@ -33,6 +33,9 @@ class TBFTConsensusNode(ConsensusNode):
         # SM2 密钥对
         self._private_key, self._public_key = self._load_keypair(node_name)
 
+        if not self._validator_pubkeys:
+            print(f"[WARNING] 未加载任何共识节点公钥，共识消息签名验证已禁用！")
+
         # 区块链持久化
         self.chain_path = os.path.join(self._DATA_DIR, node_name, "chain.json")
         self.chain = self._init_chain()
@@ -239,6 +242,11 @@ class TBFTConsensusNode(ConsensusNode):
                 print(f"[{self.standard_name}] 警告: 分叉检测! "
                       f"相同高度 {local_height} 但哈希不同, "
                       f"本地={local_hash[:16]}... 远端={peer_hash[:16]}...")
+                # 以远端链为准，回退最后一区块后重新同步
+                if len(self.chain) > 1:
+                    print(f"[{self.standard_name}] 回退最后一个区块并请求同步")
+                    self.chain.pop()
+                    self._request_sync(node, len(self.chain))
             return
 
         if msg_type == "SYNC_REQUEST":

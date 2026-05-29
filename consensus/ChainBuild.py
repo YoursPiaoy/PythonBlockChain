@@ -80,7 +80,10 @@ class BlockChain:
                 transaction_content=item["transaction_content"],
                 timestamp=item["timestamp"],
             )
-            block.self_hash = item["self_hash"]
+            # 校验 JSON 中记录的哈希是否与计算值一致
+            if item["self_hash"] != block.self_hash:
+                print(f"[加载] 区块 {item['index']} 哈希校验失败，数据可能被篡改")
+                return None
             blocks.append(block)
         print(f"[加载] 从 {path} 读取 {len(blocks)} 个区块")
         return cls(blocks)

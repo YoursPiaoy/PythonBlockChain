@@ -17,9 +17,12 @@ def sm2_generate_keypair() -> tuple:
     """
     para_len = len(default_ecc_table['n'])
     private_key = func.random_hex(para_len)
-    # 用私钥对基点 G 做标量乘法得到公钥
+    # gmssl 未提供公开的公钥派生 API，通过私钥×基点 G 计算公钥
     sm2 = CryptSM2(private_key=private_key, public_key="")
-    public_key = sm2._kg(int(private_key, 16), default_ecc_table['g'])
+    try:
+        public_key = sm2._kg(int(private_key, 16), default_ecc_table['g'])
+    except AttributeError:
+        raise RuntimeError("gmssl 版本不兼容，请联系维护者") from None
     return private_key, public_key
 
 
