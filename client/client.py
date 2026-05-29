@@ -1,9 +1,12 @@
 """
 客户端脚本 — 连接共识节点，提交交易数据
-用法: python client.py [--host 127.0.0.1] [--port 9000] [--target 8002] [--timeout 10]
+用法: python client.py [--host 127.0.0.1] [--port 9000] [--timeout 10] --config validators.json
 """
 
+
 import argparse
+import json
+import os
 import threading
 from p2pnetwork.node import Node
 
@@ -11,11 +14,8 @@ from p2pnetwork.node import Node
 class ClientNode(Node):
     """客户端 P2P 节点，连接共识节点并提交交易"""
 
-    def __init__(self, host: str, port: int, target_host: str, target_port: int,
-                 timeout: float = 10.0):
+    def __init__(self, host: str, port: int, timeout: float = 10.0):
         super().__init__(host, port, id=f"client_{port}")
-        self.target_host = target_host
-        self.target_port = target_port
         self.timeout = timeout
         self._result: threading.Event = threading.Event()
         self._result_ok: bool = False
@@ -63,24 +63,73 @@ class ClientNode(Node):
             return False
 
 
+def load_nodes(path: str) -> list[dict]:
+    """从 JSON 文件加载共识节点列表，支持 validators / nodes / peers 三种字段名"""
+    with open(path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    for key in ("validators", "nodes", "peers"):
+        if key in config:
+            return config[key]
+    return []
+
+
+def try_connect_nodes(client: "ClientNode", nodes: list[dict]) -> bool:
+    """逐个尝试连接节点列表，直到有一个连接成功，返回是否成功"""
+    for node in nodes:
+        host = node.get("host", "127.0.0.1")
+        port = node.get("port")
+        node_id = node.get("id", f"{host}:{port}")
+        if not port:
+            continue
+        print(f"[*] 尝试连接 {node_id} ({host}:{port})...")
+        if client.connect_with_node(host, port):
+            print(f"[*] 成功连接 {node_id}")
+            return True
+        print(f"[*] 连接 {node_id} 失败，尝试下一个...")
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="TBFT 客户端")
     parser.add_argument("--host", default="127.0.0.1", help="本机地址")
     parser.add_argument("--port", type=int, default=9000, help="本机端口")
-    parser.add_argument("--target", type=int, default=8002,
-                        help="目标共识节点端口 (8002=consensus1, 8003=consensus2, 8004=consensus3)")
+    parser.add_argument("--config",
+                        default=os.path.join(os.path.dirname(__file__), "validators.json"),
+                        help="共识节点配置文件路径 (JSON)")
     parser.add_argument("--timeout", type=float, default=10.0, help="交易超时(秒)")
     args = parser.parse_args()
 
-    target_host = "127.0.0.1"
+    # 解析配置文件路径
+    config_path = args.config
+    if not os.path.isabs(config_path):
+        candidates = [config_path, os.path.join(os.path.dirname(__file__), config_path)]
+    else:
+        candidates = [config_path]
+
+    resolved = None
+    for p in candidates:
+        if os.path.isfile(p):
+            resolved = p
+            break
+
+    if resolved is None:
+        print(f"[!] 配置文件不存在: {args.config}")
+        return
 
     print(f"[*] 客户端启动: {args.host}:{args.port}")
-    print(f"[*] 目标共识节点: {target_host}:{args.target}")
+    print(f"[*] 加载节点配置: {resolved}")
+    nodes = load_nodes(resolved)
+    if not nodes:
+        print("[!] 配置文件中未找到任何共识节点")
+        return
 
-    client = ClientNode(args.host, args.port, target_host, args.target,
-                        timeout=args.timeout)
+    client = ClientNode(args.host, args.port, timeout=args.timeout)
     client.start()
-    client.connect_with_node(target_host, args.target)
+
+    if not try_connect_nodes(client, nodes):
+        print("[!] 未能连接到任何共识节点，退出")
+        client.stop()
+        return
 
     print("\n输入交易内容后回车发送，输入 q 退出\n")
 
