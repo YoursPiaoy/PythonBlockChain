@@ -1,0 +1,10 @@
+[
+  {
+    "index": "0",
+    "previous_block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "transaction_content": "This is the genesis block",
+    "timestamp": 1780037049.866895,
+    "timestamp_readable": "2026-05-29 14:44:09",
+    "self_hash": "19fa6825ea3352aa18b2db9654d758b1d2bd365de42323a0637e4e84dee5e682"
+  }
+]

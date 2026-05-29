@@ -5,6 +5,7 @@
 
 import argparse
 import json
+import os
 import signal
 import threading
 import time
@@ -25,7 +26,7 @@ def load_config(path: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="TBFT 共识节点启动脚本")
-    parser.add_argument("--config", default="validators.json", help="配置文件路径")
+    parser.add_argument("--config", default=os.path.join(os.path.dirname(__file__), "validators.json"), help="配置文件路径")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -46,7 +47,6 @@ def main():
             node.stop()
         if seed:
             seed.stop()
-        print("[*] 所有节点已关闭")
 
     def on_signal(signum, frame):
         stop_all()

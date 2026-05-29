@@ -1,18 +1,27 @@
 """
-TBFT 五阶段状态机
+TBFT 五阶段状态机（含超时检测）
 NewRound -> Proposal -> Prevote -> Precommit -> Commit
+每个阶段有独立超时，超时自动推进到下一轮。
 """
 
 import threading
 
 
 class TBFTStateMachine:
+    # 各阶段超时（秒），COMMIT 瞬时完成不需要超时
+    TIMEOUTS: dict[str, float] = {
+        "NEW_ROUND": 5.0,
+        "PROPOSAL":  3.0,
+        "PREVOTE":   5.0,
+        "PRECOMMIT": 5.0,
+    }
+
     def __init__(self,
                  node_id: str,        # 本节点名称
                  validators: list[str],    # 所有验证者节点名称列表
                  on_commit, on_broadcast, on_propose,
                  log_file: str | None = None):
-        
+
         self.node_id: str = node_id
         self.validators: list[str] = validators
         self.on_commit = on_commit
@@ -29,6 +38,9 @@ class TBFTStateMachine:
         self.precommits: dict[str, str | None] = {}   # voter -> 区块数据或nil
 
         self._lock = threading.RLock()
+        self._timer: threading.Timer | None = None
+        self._timer_gen: int = 0               # 代际：防止旧定时器误触发
+        self._stopped: bool = False
 
         # 日志：有文件则写文件，否则不输出
         if log_file:
@@ -61,10 +73,44 @@ class TBFTStateMachine:
         with self._lock:
             self.goto("NEW_ROUND")
 
+    # ==================== 定时器 ====================
+
+    def _start_timer(self) -> None:
+        """为当前阶段启动超时定时器，代际+1 使旧定时器无效"""
+        if self._stopped:
+            return
+        self._timer_gen += 1
+        gen = self._timer_gen
+        duration = self.TIMEOUTS.get(self.step)
+        if duration is None:
+            return
+        self._timer = threading.Timer(duration, self._on_timeout, args=(gen,))
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _on_timeout(self, gen: int) -> None:
+        """定时器回调，代际不匹配则忽略"""
+        with self._lock:
+            if self._stopped or gen != self._timer_gen:
+                return
+            self.timeout()
+
+    def stop(self) -> None:
+        """停止状态机，清理定时器与日志"""
+        self._stopped = True
+        if self._timer:
+            self._timer.cancel()
+            self._timer = None
+        if self._log_fp:
+            self._log_fp.close()
+            self._log_fp = None
+
     # ==================== 状态转移 ====================
 
     def goto(self, step):
         with self._lock:
+            if self._stopped:
+                return
             self.step = step
             {
                 "NEW_ROUND":   self.enter_new_round,
@@ -73,6 +119,7 @@ class TBFTStateMachine:
                 "PRECOMMIT":   self.enter_precommit,
                 "COMMIT":      self.enter_commit,
             }[step]()
+        self._start_timer()
 
     # ==================== 1. NEW_ROUND ====================
 
@@ -182,7 +229,9 @@ class TBFTStateMachine:
 
     def timeout(self):
         with self._lock:
-            self._log(f"[{self.node_id}] 超时! r{self.round} -> r{self.round + 1}")
+            if self._stopped:
+                return
+            self._log(f"[{self.node_id}] 超时! h{self.height} r{self.round} step={self.step} -> r{self.round + 1}")
             self.round += 1
             self.goto("NEW_ROUND")
 

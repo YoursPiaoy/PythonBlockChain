@@ -12,6 +12,8 @@ from ChainBuild import BlockChain, add_block, save
 class TBFTConsensusNode(ConsensusNode):
     """携带 TBFT 共识引擎的共识节点"""
 
+    _DATA_DIR = os.path.join(os.path.dirname(__file__), "Nodes")
+
     def __init__(self, host: str, port: int, node_name: str,
                  validators: list[str], max_connections: int = 0):
         super().__init__(host, port, node_name, callback=None, max_connections=max_connections)
@@ -20,7 +22,7 @@ class TBFTConsensusNode(ConsensusNode):
         self._client_nodes: list = []           # 客户端节点（用于回复）
 
         # 区块链持久化
-        self.chain_path = os.path.join("Nodes", node_name, "chain.json")
+        self.chain_path = os.path.join(self._DATA_DIR, node_name, "chain.json")
         self.chain = self._init_chain()
 
         self.engine = TBFTStateMachine(
@@ -29,7 +31,7 @@ class TBFTConsensusNode(ConsensusNode):
             on_commit=self._on_block_committed,
             on_broadcast=self._broadcast_consensus,
             on_propose=self._get_block_data,
-            log_file=os.path.join("Nodes", node_name, "consensus.log"),
+            log_file=os.path.join(self._DATA_DIR, node_name, "consensus.log"),
         )
         self.engine.height = len(self.chain)
 
@@ -88,6 +90,12 @@ class TBFTConsensusNode(ConsensusNode):
             self._tx_queue.append(data["CONTENT"])
             if node not in self._client_nodes:
                 self._client_nodes.append(node)
+            # 阶段一：立即回复客户端确认收到
+            self.send_to_node(node, {
+                "type": "TX_RECEIVED",
+                "node": self.standard_name,
+                "content": data["CONTENT"],
+            })
             self.send_to_nodes({"type": "CONSENSUS_TRIGGER",
                                 "CONTENT": data["CONTENT"]})
             self.next_round()
@@ -109,6 +117,10 @@ class TBFTConsensusNode(ConsensusNode):
 
     def next_round(self):
         self.engine.next_round()
+
+    def stop(self):
+        self.engine.stop()
+        super().stop()
 
 
 # ==================== 测试入口 ====================
