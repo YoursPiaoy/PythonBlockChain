@@ -38,16 +38,26 @@ class ConsensusNode(Node):
         self.standard_name = f"{self.id} @ {self.host}:{self.port}"
 
     def node_message(self, node, data):
-        if isinstance(data, dict) and data.get("type"):
-            msg_type = data.get("type")
-            if msg_type == "PEER_LIST":
-                for peer in data["peers"]:
-                    self.connect_with_node(peer["host"], peer["port"])
-            elif msg_type == "NEW_PEER":
-                peer = data["peer"]
+        if not isinstance(data, dict) or "type" not in data:
+            return
+
+        msg_type = data["type"]
+
+        if msg_type == "PEER_LIST":
+            for peer in data["peers"]:
                 self.connect_with_node(peer["host"], peer["port"])
-            elif msg_type == "SHUTDOWN":
-                self.stop()
+            return
+        if msg_type == "NEW_PEER":
+            self.connect_with_node(data["peer"]["host"], data["peer"]["port"])
+            return
+        if msg_type == "SHUTDOWN":
+            self.stop()
+            return
+
+        self._handle_message(node, data)
+
+    def _handle_message(self, node, data):
+        """子类重写以处理自定义消息类型"""
 
 
 if __name__ == "__main__":

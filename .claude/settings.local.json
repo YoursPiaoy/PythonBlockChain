@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf Nodes/)",
+      "Bash(python test_client_integration.py)"
+    ]
+  }
+}

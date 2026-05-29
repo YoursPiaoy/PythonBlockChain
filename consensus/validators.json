@@ -1,0 +1,11 @@
+{
+    "seed": {
+        "host": "127.0.0.1",
+        "port": 8001
+    },
+    "validators": [
+        {"id": "consensus1", "host": "127.0.0.1", "port": 8002},
+        {"id": "consensus2", "host": "127.0.0.1", "port": 8003},
+        {"id": "consensus3", "host": "127.0.0.1", "port": 8004}
+    ]
+}

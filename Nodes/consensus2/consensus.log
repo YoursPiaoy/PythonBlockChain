@@ -1,0 +1,8 @@
+[consensus2] 1:0 NewRound  leader=consensus2
+[consensus2] 1:0 Proposal  (我是提议者)
+[consensus2] 广播提案: 测试交易: 张三向李四转账100元
+[consensus2] 1:0 Prevote  -> 测试交易: 张三向李四转账100元
+[consensus2] Prevote 达成 >2/3
+[consensus2] 1:0 Precommit -> 测试交易: 张三向李四转账100元 [锁定]
+[consensus2] Precommit 达成 >2/3
+[consensus2] 1:0 COMMIT 区块上链
